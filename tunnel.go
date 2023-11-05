@@ -33,22 +33,36 @@ type Tunnel struct {
 	closeCh chan struct{}
 }
 
-func NewTunnel() *Tunnel {
-	t := &Tunnel{}
+func NewTunnel(
+	cfg *Config,
+	logger *slog.Logger,
+	resolver *Resolver,
+) *Tunnel {
+	meta := cfg.Metadata.Tunnel
+	t := &Tunnel{
+		resolver:    resolver,
+		logger:      logger,
+		addr:        meta.Addr,
+		connections: make(map[int64]*tunnelCtx),
+		closeCh:     make(chan struct{}),
+	}
+
 	return t
 }
 
-func (p *Tunnel) Start() error {
+func (p *Tunnel) Start() {
 	var err error
 	p.listener, err = net.Listen("tcp", p.addr)
 	if err != nil {
-		return err
+		p.logger.Error("listen failed", slog.String("addr", p.addr),
+			slog.Any("err", err))
+		return
 	}
 
 	p.running.Store(true)
 	p.protectRun(p.serve)
 
-	return nil
+	return
 }
 
 func (p *Tunnel) protectRun(fn func()) {

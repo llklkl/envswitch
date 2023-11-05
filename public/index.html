@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>本地资源库</title>
+    <link rel="shortcut icon" href="/static/asserts/favicon.svg">
+    <!-- 导入样式 -->
+    <link rel="stylesheet" href="https://npm.elemecdn.com/element-plus/dist/index.css"/>
+    <!-- 导入 Vue 3 -->
+    <script src="https://npm.elemecdn.com/vue@next"></script>
+    <!-- 导入组件库 -->
+    <script src="https://npm.elemecdn.com/element-plus"></script>
+    <!--导入axios-->
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+</head>
+<body>
+<div id="app">
+    <el-row style="padding-top: 60px" justify="center">
+        <el-col :xs="8" :sm="8" :md="6" :lg="3" :xl="1">
+            <el-button v-on:click="enableEntry" type="primary">
+                load
+            </el-button>
+        </el-col>
+        <el-col :xs="12" :sm="12" :md="10" :lg="12" :xl="4">
+            <el-select v-model="entries.enabled" class="m-2" placeholder="Select">
+                <el-option
+                        v-for="item in entries.list"
+                        :key="item"
+                        :label="item"
+                        :value="item"
+                />
+            </el-select>
+        </el-col>
+    </el-row>
+    <el-row style="padding-top: 32px" justify="center">
+        <el-col :xs="4" :sm="4" :md="2" :lg="1" :xl="1">
+            <el-button v-on:click="addEntry" type="primary">
+                add
+            </el-button>
+        </el-col>
+        <el-col :xs="12" :sm="12" :md="10" :lg="12" :xl="4">
+            <el-select v-model="addedEntry.type" class="m-2" placeholder="Select">
+                <el-option key="file" value="file"></el-option>
+                <el-option key="url" value="url"></el-option>
+            </el-select>
+        </el-col>
+    </el-row>
+    <el-row style="padding-top: 32px" justify="center">
+        <el-col :xs="12" :sm="12" :md="10" :lg="12" :xl="4">
+            <el-input v-model="addedEntry.name" placeholder="name"></el-input>
+        </el-col>
+    </el-row>
+    <el-row style="padding-top: 32px" justify="center">
+        <el-col :xs="12" :sm="12" :md="10" :lg="12" :xl="4">
+            <el-input
+                    v-model="addedEntry.data"
+                    :autosize="{ minRows: 1}"
+                    type="textarea"
+                    placeholder="Please input"
+            />
+        </el-col>
+    </el-row>
+</div>
+</body>
+<script>
+    const vue3Composition = {
+        setup() {
+            const entries = Vue.ref({
+                enabled: '',
+                list: []
+            })
+
+            const addedEntry = Vue.ref({
+                type: '',
+                name: '',
+                data: '',
+                sync_period: '2h'
+            })
+
+            const enableEntry = () => {
+                console.log("enableEntry")
+                axios.post('/api?action=enableEntry', {
+                    name: entries.value.enabled
+                }).then(function (resp) {
+                    console.log(resp.data)
+                }).catch(function (err) {
+                    console.log(err)
+                })
+            }
+
+            const listEntries = () => {
+                console.log("listEntries")
+                axios.post('/api?action=listEntries', {}).then(function (resp) {
+                    let data = resp.data.data
+                    entries.value.list = data.list
+                    entries.value.enabled = data.enabled
+                }).catch(function (err) {
+                    console.log(err)
+                })
+            }
+
+            const addEntry = () => {
+                console.log("addEntry")
+                console.log(addedEntry.value)
+                axios.post('/api?action=addEntry', {
+                    name: addedEntry.value.name,
+                    type: addedEntry.value.type,
+                    data: addedEntry.value.data,
+                    sync_period: addedEntry.value.sync_period
+                }).then(function (resp) {
+                    listEntries()
+                }).catch(function (err) {
+                    console.log(err)
+                })
+            }
+
+            Vue.onMounted(function () {
+                listEntries()
+            })
+
+            return {
+                entries,
+                addedEntry,
+                enableEntry,
+                addEntry
+            }
+        }
+    }
+    const vm = Vue.createApp(vue3Composition).use(ElementPlus).mount('#app')
+</script>
+</html>

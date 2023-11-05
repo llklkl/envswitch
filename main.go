@@ -1,89 +1,83 @@
 package main
 
 import (
-	"bufio"
-	"fmt"
-	"io"
-	"net"
-	"strings"
+	"flag"
+	"log/slog"
+	"os"
+	"os/signal"
+	"runtime/debug"
+	"syscall"
 )
 
-func handle(conn net.Conn) {
-	defer func() {
-		conn.Close()
-	}()
-	reader := bufio.NewReader(conn)
-	var dstAddr string
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return
-		}
-		line = strings.TrimSpace(line)
-		fmt.Println(line)
-		if dstAddr == "" {
-			if len(line) > 7 && strings.EqualFold(line[:7], "connect") {
-				sps := strings.SplitN(line, " ", 3)
-				if len(sps) == 3 {
-					dstAddr = sps[1]
-				}
-			}
-		}
-		if len(line) == 0 {
-			break
-		}
-	}
+var (
+	confPath = flag.String("conf", "config.json", "config path")
+)
 
-	remoteConn, err := net.Dial("tcp", dstAddr)
-	if err != nil {
-		return
-	}
-	_, err = conn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n"))
-	if err != nil {
-		return
-	}
-	defer func() {
-		remoteConn.Close()
-	}()
+type App struct {
+	cfg     *Config
+	logger  *slog.Logger
+	manager *Manager
+	tunnel  *Tunnel
+}
 
-	errChan := make(chan error, 1)
+func initApp() *App {
+	flag.Parse()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	cfg := NewConfig(*confPath)
+	hostKeeper := NewHostsKeeper(cfg, logger.With(slog.String("module", "hostskeeper")))
+	resolver := NewResolver()
+
+	hostKeeper.Watch(resolver.Set)
+
+	app := &App{
+		cfg:     cfg,
+		logger:  logger.With(slog.String("module", "app")),
+		manager: NewManager(cfg, logger.With(slog.String("module", "manager")), hostKeeper),
+		tunnel:  NewTunnel(cfg, logger.With(slog.String("module", "tunnel")), resolver),
+	}
+	hostKeeper.Watch(func(Hosts) {
+		app.tunnel.Reload()
+	})
+
+	return app
+}
+
+func (a *App) Start() {
+	a.protectRun(a.manager.Start)
+	a.protectRun(a.tunnel.Start)
+}
+
+func (a *App) Wait() {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
+	sig := <-sigs
+
+	a.logger.Warn("quit", slog.String("signal", sig.String()))
+}
+
+func (a *App) Stop() {
+	a.manager.Stop()
+	a.tunnel.Stop()
+}
+
+func (a *App) protectRun(fn func()) {
 	go func() {
-		for {
-			_, err := io.Copy(conn, remoteConn)
-			if err != nil {
-				errChan <- err
-				return
-			}
+		e := recover()
+		if e != nil {
+			a.logger.Error("panic", slog.Any("err", e),
+				slog.String("stack", string(debug.Stack())))
 		}
-	}()
-	go func() {
-		for {
-			_, err := io.Copy(remoteConn, reader)
-			if err != nil {
-				errChan <- err
-				return
-			}
-		}
-	}()
 
-	err = <-errChan
-	return
+		fn()
+	}()
 }
 
 func main() {
-	lis, err := net.Listen("tcp", ":8088")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	for {
-		conn, err := lis.Accept()
-		if err != nil {
-			fmt.Println(err)
-			break
-		}
-
-		go handle(conn)
-	}
+	app := initApp()
+	app.Start()
+	defer app.Stop()
+	app.Wait()
 }
