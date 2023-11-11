@@ -64,9 +64,9 @@ func (m *Manager) Start() {
 }
 
 func (m *Manager) Stop() {
-	if err := m.svr.Close(); err != nil {
-		m.logger.Error("server close failed", slog.Any("err", err))
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancel()
+	m.svr.Shutdown(ctx)
 }
 
 func (m *Manager) initHttpServer(listenAddr string) {

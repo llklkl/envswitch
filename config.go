@@ -15,6 +15,7 @@ type Config struct {
 	mutex   sync.Mutex
 
 	ListenAddr string `json:"listen_addr"`
+	TunnelAddr string `json:"tunnel_addr"`
 
 	Metadata *Metadata `json:"metadata"`
 }
@@ -40,7 +41,6 @@ type HostsEntryCfg struct {
 }
 
 type TunnelMetadata struct {
-	Addr string `json:"addr"`
 }
 
 func NewConfig(cfgPath string) *Config {

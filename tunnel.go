@@ -38,11 +38,10 @@ func NewTunnel(
 	logger *slog.Logger,
 	resolver *Resolver,
 ) *Tunnel {
-	meta := cfg.Metadata.Tunnel
 	t := &Tunnel{
 		resolver:    resolver,
 		logger:      logger,
-		addr:        meta.Addr,
+		addr:        cfg.TunnelAddr,
 		connections: make(map[int64]*tunnelCtx),
 		closeCh:     make(chan struct{}),
 	}
@@ -122,6 +121,11 @@ func (p *Tunnel) Stop() {
 		}
 		p.listener = nil
 	}
+	p.mu.Lock()
+	for _, ctx := range p.connections {
+		p.closeConnection(ctx)
+	}
+	p.mu.Unlock()
 }
 
 type tunnelCtx struct {
@@ -145,10 +149,15 @@ const (
 )
 
 func (p *Tunnel) HandleConnection(proxyConn net.Conn) {
+	if proxyConn == nil { // FIXME maybe listener closed???
+		return
+	}
 	ctx := &tunnelCtx{
 		id:        p.connectionId.Add(1),
 		proxyConn: proxyConn,
-		proxyAddr: proxyConn.RemoteAddr().String(),
+	}
+	if ra := proxyConn.RemoteAddr(); ra != nil {
+		ctx.proxyAddr = ra.String()
 	}
 
 	defer func() {
@@ -204,6 +213,13 @@ func (p *Tunnel) handleConnectRequest(ctx *tunnelCtx) (buf *bufio.Reader, err er
 			line, err = reader.ReadLine()
 			line = strings.TrimSpace(line)
 			sps := strings.Split(line, " ")
+			tmp := sps[:0]
+			for _, s := range sps {
+				if len(s) > 0 {
+					tmp = append(tmp, s)
+				}
+			}
+			sps = tmp
 			if len(sps) != 3 {
 				if err == nil {
 					err = fmt.Errorf("wrong command format")

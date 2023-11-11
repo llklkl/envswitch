@@ -1,17 +1,25 @@
 package main
 
-import "sync/atomic"
+import (
+	"log/slog"
+	"sync/atomic"
+)
 
 type Resolver struct {
-	hosts atomic.Value
+	logger *slog.Logger
+	hosts  atomic.Value
 }
 
-func NewResolver() *Resolver {
-	r := &Resolver{}
+func NewResolver(logger *slog.Logger) *Resolver {
+	r := &Resolver{
+		logger: logger,
+	}
+	r.hosts.Store(Hosts{})
 	return r
 }
 
 func (r *Resolver) Set(hosts Hosts) {
+	r.logger.Warn("reload")
 	r.hosts.Store(hosts)
 }
 

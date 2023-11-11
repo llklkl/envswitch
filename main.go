@@ -2,16 +2,28 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strings"
 	"syscall"
 )
 
 var (
-	confPath = flag.String("conf", "config.json", "config path")
+	helpFlag = flag.Bool("h", false, "help")
+	confPath = flag.String("conf", "config.json", "配置文件路径")
+	logLevel = flag.String("log", "WARN", "日志级别")
 )
+
+func help() {
+	fmt.Println(`
+usage: envswitch [-conf <path>] [-h] [-log <level>]
+	-h: 打开帮助页面
+	-conf <path>: 指定配置文件路径, 默认使用 config.json
+	-log <level>: 指定日志级别, 默认WARN. 支持 INFO, WARN, ERROR`)
+}
 
 type App struct {
 	cfg     *Config
@@ -20,15 +32,25 @@ type App struct {
 	tunnel  *Tunnel
 }
 
-func initApp() *App {
-	flag.Parse()
+func newLogger() *slog.Logger {
+	level := slog.LevelWarn
+	switch strings.ToLower(*logLevel) {
+	case "info":
+		level = slog.LevelInfo
+	case "error":
+		level = slog.LevelError
+	}
+	logHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: level,
+	})
+	return slog.New(logHandler)
+}
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
+func initApp() *App {
+	logger := newLogger()
 	cfg := NewConfig(*confPath)
 	hostKeeper := NewHostsKeeper(cfg, logger.With(slog.String("module", "hostskeeper")))
-	resolver := NewResolver()
+	resolver := NewResolver(logger.With(slog.String("module", "resolver")))
 
 	app := &App{
 		cfg:     cfg,
@@ -52,9 +74,13 @@ func (a *App) Start() {
 func (a *App) Wait() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
-	sig := <-sigs
-
-	a.logger.Warn("quit", slog.String("signal", sig.String()))
+	for {
+		select {
+		case sig := <-sigs:
+			a.logger.Warn("quit", slog.String("signal", sig.String()))
+			return
+		}
+	}
 }
 
 func (a *App) Stop() {
@@ -75,6 +101,12 @@ func (a *App) protectRun(fn func()) {
 }
 
 func main() {
+	flag.Parse()
+
+	if *helpFlag {
+		help()
+		return
+	}
 	app := initApp()
 	app.Start()
 	defer app.Stop()
