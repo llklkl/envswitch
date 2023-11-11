@@ -51,6 +51,7 @@ func NewTunnel(
 }
 
 func (p *Tunnel) Start() {
+	p.logger.Warn("tunnel start", slog.String("listen_on", p.addr))
 	var err error
 	p.listener, err = net.Listen("tcp", p.addr)
 	if err != nil {
@@ -207,7 +208,7 @@ func (p *Tunnel) handleConnectRequest(ctx *tunnelCtx) (buf *bufio.Reader, err er
 				if err == nil {
 					err = fmt.Errorf("wrong command format")
 				} else {
-					err = fmt.Errorf("wrong command format: %w", err)
+					err = fmt.Errorf("wrong command format[%s]: %w", line, err)
 				}
 				return
 			}
@@ -231,7 +232,7 @@ func (p *Tunnel) handleConnectRequest(ctx *tunnelCtx) (buf *bufio.Reader, err er
 			}
 			part = partEndOfHeader
 		case partEndOfHeader:
-			break
+			return
 		}
 	}
 	if part != partEndOfHeader {

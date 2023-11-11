@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"sort"
 	"time"
 )
 
@@ -56,6 +57,7 @@ func NewManager(
 }
 
 func (m *Manager) Start() {
+	m.logger.Warn("manager start", slog.String("listen_on", m.svr.Addr))
 	if err := m.svr.ListenAndServe(); err != nil {
 		m.logger.Error("server quit unexpected", slog.Any("err", err))
 	}
@@ -80,6 +82,8 @@ func (m *Manager) initHttpServer(listenAddr string) {
 
 	m.apiHandlers["listEntries"] = m.listEntries
 	m.apiHandlers["addEntry"] = m.addEntry
+	m.apiHandlers["getEntry"] = m.getEntry
+	m.apiHandlers["deleteEntry"] = m.deleteEntry
 	m.apiHandlers["enableEntry"] = m.enableEntry
 }
 
@@ -151,6 +155,7 @@ func (m *Manager) addEntry(
 	reqObj := struct {
 		Type       string `json:"type"`
 		Name       string `json:"name"`
+		RemoteUrl  string `json:"remote_url"`
 		Data       string `json:"data"`
 		SyncPeriod string `json:"sync_period"`
 	}{}
@@ -159,10 +164,10 @@ func (m *Manager) addEntry(
 	}
 
 	var err error
-	switch reqObj.Type {
-	case "url":
-		err = m.hostsKeeper.FromNetwork(ctx, reqObj.Name, reqObj.Data, reqObj.SyncPeriod, true)
-	case "file":
+	switch HostsType(reqObj.Type) {
+	case HostsFromNetwork:
+		err = m.hostsKeeper.FromNetwork(ctx, reqObj.Name, reqObj.RemoteUrl, reqObj.SyncPeriod, true)
+	case HostsFromFile:
 		err = m.hostsKeeper.FromFile(ctx, reqObj.Name, reqObj.Data, true)
 	default:
 		err = fmt.Errorf("bad argument")
@@ -174,7 +179,7 @@ func (m *Manager) addEntry(
 	return nil, nil
 }
 
-func (m *Manager) enableEntry(
+func (m *Manager) deleteEntry(
 	ctx context.Context, header http.Header, body []byte,
 ) (any, error) {
 	reqObj := struct {
@@ -183,7 +188,56 @@ func (m *Manager) enableEntry(
 	if err := json.Unmarshal(body, &reqObj); err != nil {
 		return nil, err
 	}
-	err := m.hostsKeeper.Enable(reqObj.Name)
+
+	err := m.hostsKeeper.Delete(reqObj.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
+func (m *Manager) getEntry(
+	ctx context.Context, header http.Header, body []byte,
+) (any, error) {
+	reqObj := struct {
+		Name string `json:"name"`
+	}{}
+	if err := json.Unmarshal(body, &reqObj); err != nil {
+		return nil, err
+	}
+
+	entry, err := m.hostsKeeper.Get(reqObj.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	res := map[string]any{
+		"name":       entry.Name,
+		"enable":     entry.Enable,
+		"type":       entry.Type,
+		"remote_url": entry.RemoteUrl,
+	}
+	if entry.Type == HostsFromNetwork {
+		res["data"] = entry.Hosts.String()
+	} else {
+		res["data"] = entry.Origin
+	}
+
+	return res, nil
+}
+
+func (m *Manager) enableEntry(
+	ctx context.Context, header http.Header, body []byte,
+) (any, error) {
+	reqObj := struct {
+		Name   string `json:"name"`
+		Enable bool   `json:"enable"`
+	}{}
+	if err := json.Unmarshal(body, &reqObj); err != nil {
+		return nil, err
+	}
+	err := m.hostsKeeper.Enable(reqObj.Name, reqObj.Enable)
 	if err != nil {
 		return nil, err
 	}
@@ -194,8 +248,20 @@ func (m *Manager) enableEntry(
 func (m *Manager) listEntries(
 	ctx context.Context, header http.Header, body []byte,
 ) (any, error) {
+	entries := m.hostsKeeper.ListEntries()
+	list := make([]map[string]any, 0, len(entries))
+	names := make([]string, 0, len(entries))
+	for name := range entries {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		list = append(list, map[string]any{
+			"name":   name,
+			"enable": entries[name],
+		})
+	}
 	return map[string]any{
-		"list":    m.hostsKeeper.ListEntryNames(),
-		"enabled": m.hostsKeeper.Enabled(),
+		"list": list,
 	}, nil
 }

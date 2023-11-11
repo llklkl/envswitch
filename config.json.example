@@ -1,0 +1,8 @@
+{
+    "listen_addr": ":8080",
+    "metadata": {
+        "tunnel": {
+            "addr": ":9090"
+        }
+    }
+}

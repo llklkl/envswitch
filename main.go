@@ -30,14 +30,13 @@ func initApp() *App {
 	hostKeeper := NewHostsKeeper(cfg, logger.With(slog.String("module", "hostskeeper")))
 	resolver := NewResolver()
 
-	hostKeeper.Watch(resolver.Set)
-
 	app := &App{
 		cfg:     cfg,
 		logger:  logger.With(slog.String("module", "app")),
 		manager: NewManager(cfg, logger.With(slog.String("module", "manager")), hostKeeper),
 		tunnel:  NewTunnel(cfg, logger.With(slog.String("module", "tunnel")), resolver),
 	}
+	hostKeeper.Watch(resolver.Set)
 	hostKeeper.Watch(func(Hosts) {
 		app.tunnel.Reload()
 	})

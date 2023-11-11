@@ -31,6 +31,7 @@ type HostsMetadata struct {
 
 type HostsEntryCfg struct {
 	Name           string        `json:"name"`
+	Enable         bool          `json:"enable"`
 	Type           HostsType     `json:"type,omitempty"`
 	RemoteUrl      string        `json:"remote_url,omitempty"` // 远程链接
 	Period         time.Duration `json:"period,omitempty"`     // 定时更新周期
