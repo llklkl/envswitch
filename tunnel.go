@@ -61,8 +61,6 @@ func (p *Tunnel) Start() {
 
 	p.running.Store(true)
 	p.protectRun(p.serve)
-
-	return
 }
 
 func (p *Tunnel) protectRun(fn func()) {
@@ -100,11 +98,15 @@ func (p *Tunnel) serve() {
 }
 
 func (p *Tunnel) Reload() {
+	var connections map[int64]*tunnelCtx
 	p.mu.Lock()
-	for _, ctx := range p.connections {
+	connections = p.connections
+	p.connections = map[int64]*tunnelCtx{}
+	p.mu.Unlock()
+
+	for _, ctx := range connections {
 		p.closeConnection(ctx)
 	}
-	p.mu.Unlock()
 }
 
 func (p *Tunnel) Stop() {
@@ -121,11 +123,16 @@ func (p *Tunnel) Stop() {
 		}
 		p.listener = nil
 	}
+
+	var connections map[int64]*tunnelCtx
 	p.mu.Lock()
-	for _, ctx := range p.connections {
+	connections = p.connections
+	p.connections = map[int64]*tunnelCtx{}
+	p.mu.Unlock()
+
+	for _, ctx := range connections {
 		p.closeConnection(ctx)
 	}
-	p.mu.Unlock()
 }
 
 type tunnelCtx struct {
@@ -317,7 +324,7 @@ func (p *Tunnel) createRemoteConnection(ctx *tunnelCtx) error {
 	return nil
 }
 
-func (p *Tunnel) closeConnection(ctx *tunnelCtx) {
+func (p *Tunnel) closeConnectionLocked(ctx *tunnelCtx) {
 	if ctx.proxyConn != nil {
 		if err := ctx.proxyConn.Close(); err != nil {
 			p.logger.Error("close proxy connection failed", slog.Any("err", err))
@@ -330,18 +337,18 @@ func (p *Tunnel) closeConnection(ctx *tunnelCtx) {
 	}
 
 	ctx.established = false
-	p.removeConnect(ctx)
+	delete(p.connections, ctx.id)
+}
+
+func (p *Tunnel) closeConnection(ctx *tunnelCtx) {
+	p.mu.Lock()
+	p.closeConnectionLocked(ctx)
+	p.mu.Unlock()
 }
 
 func (p *Tunnel) putEstablishedConnection(ctx *tunnelCtx) {
 	p.mu.Lock()
 	p.connections[ctx.id] = ctx
-	p.mu.Unlock()
-}
-
-func (p *Tunnel) removeConnect(ctx *tunnelCtx) {
-	p.mu.Lock()
-	delete(p.connections, ctx.id)
 	p.mu.Unlock()
 }
 

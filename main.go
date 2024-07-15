@@ -66,9 +66,21 @@ func initApp() *App {
 	return app
 }
 
+func (a *App) writePid() {
+	pid := os.Getpid()
+	fp, err := os.OpenFile("./.pid", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0755)
+	if err != nil {
+		return
+	}
+	defer fp.Close()
+
+	fmt.Fprintf(fp, "%d", pid)
+}
+
 func (a *App) Start() {
 	a.protectRun(a.manager.Start)
 	a.protectRun(a.tunnel.Start)
+	a.writePid()
 }
 
 func (a *App) Wait() {
@@ -86,6 +98,7 @@ func (a *App) Wait() {
 func (a *App) Stop() {
 	a.manager.Stop()
 	a.tunnel.Stop()
+	_ = os.Remove("./.pid")
 }
 
 func (a *App) protectRun(fn func()) {
@@ -107,6 +120,7 @@ func main() {
 		help()
 		return
 	}
+
 	app := initApp()
 	app.Start()
 	defer app.Stop()

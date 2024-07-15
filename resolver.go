@@ -19,7 +19,7 @@ func NewResolver(logger *slog.Logger) *Resolver {
 }
 
 func (r *Resolver) Set(hosts Hosts) {
-	r.logger.Warn("reload")
+	r.logger.Warn("reload resolver")
 	r.hosts.Store(hosts)
 }
 
